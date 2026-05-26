@@ -1,3 +1,6 @@
+# Ex9 — Reflection
+
+
 ## Q1 — Planner handoff decision
 
 In session `sess_426ffd7ac7ab`, the planner's first handoff decision is visible in the trace at `2026-05-26T01:57:19`. After producing 3 subgoals for the task "book for party of 12 in Haymarket", the executor called `handoff_to_structured` with:
@@ -17,6 +20,7 @@ The signal that caused the decision was a missing required field — the planner
 - `sessions/sess_426ffd7ac7ab/logs/trace.jsonl` — `session.state_changed` `loop→structured` round 1
 
 ---
+# Ex9 — Reflection
 
 ## Q2 — Dataflow integrity check
 
@@ -29,6 +33,7 @@ A concrete scenario where it would catch a failure a human reviewer would miss: 
 - `sessions/sess_426ffd7ac7ab/logs/trace.jsonl` — `executor.tool_called` `generate_flyer`
 
 ---
+# Ex9 — Reflection
 
 ## Q3 — First production failure and which primitive surfaces it
 
