@@ -3,6 +3,8 @@
 
 ## Q1 — Planner handoff decision
 
+## Your answer
+
 In session `sess_426ffd7ac7ab`, the planner's first handoff decision is visible in the trace at `2026-05-26T01:57:19`. After producing 3 subgoals for the task "book for party of 12 in Haymarket", the executor called `handoff_to_structured` with:
 
 ```json
@@ -24,6 +26,8 @@ The signal that caused the decision was a missing required field — the planner
 
 ## Q2 — Dataflow integrity check
 
+## Your answer
+
 In ex5, the FakeLLMClient scripted `generate_flyer` with `total_gbp: 540`. The `calculate_cost` tool independently computed and logged `total_gbp: 540` into `_TOOL_CALL_LOG`. The integrity check called `fact_appears_in_log("£540")` and found the match — passing correctly.
 
 A concrete scenario where it would catch a failure a human reviewer would miss: suppose the LLM calls `calculate_cost` for `haymarket_tap` with `party_size=6` (returning `£540`), but then hallucinates `total_gbp: 9999` in the `generate_flyer` call, perhaps because it misread a different venue's cost from earlier context. The flyer would contain `£9999`. A human reviewer skimming the flyer would see a plausible-looking pound amount and might not cross-check it against the tool output. The integrity check would call `fact_appears_in_log("£9999")`, find no matching tool output, and fail with `unverified_facts: ["£9999"]` — catching the fabrication automatically.
@@ -36,6 +40,8 @@ A concrete scenario where it would catch a failure a human reviewer would miss: 
 # Ex9 — Reflection
 
 ## Q3 — First production failure and which primitive surfaces it
+
+## Your answer
 
 The first production failure I would expect is a missing required field in the handoff payload — exactly what happened in `sess_426ffd7ac7ab`. The loop half handed off to the structured half without a `venue_id`, causing the validator to reject with `normalisation failed: missing venue_id` across all three rounds, exhausting `max_rounds` without resolution.
 

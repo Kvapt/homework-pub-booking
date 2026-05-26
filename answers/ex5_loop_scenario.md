@@ -2,25 +2,13 @@
 
 ## Your answer
 
-The planner produced two subgoals: sg_1 (research venues near Haymarket
-for a party of 6, assigned to loop) and sg_2 (produce a flyer with the
-chosen venue, weather, and cost, also loop). Both ran in the same
-executor session.
+I implemented four tools in `starter/edinburgh_research/tools.py`: `venue_search`, `get_weather`, `calculate_cost`, and `generate_flyer`. The first three read from JSON fixtures in `sample_data/` and are marked `parallel_safe=True`. `generate_flyer` writes `workspace/flyer.html` and is `parallel_safe=False`.
 
-Turn 1 called venue_search, get_weather, and calculate_cost in parallel
-— all three are parallel_safe because they only read fixtures. Turn 2
-wrote the flyer via generate_flyer (parallel_safe=False because it
-writes a file). Turn 3 called complete_task.
+The offline run (`make ex5`) uses `FakeLLMClient` with a scripted two-subgoal trajectory. Subgoal 1 calls `venue_search`, `get_weather`, and `calculate_cost` in parallel. Subgoal 2 calls `generate_flyer`. The flyer uses `data-testid` attributes on every fact so `verify_dataflow` can extract them by structured parsing rather than loose regex.
 
-The dataflow integrity check caught one issue during development: the
-template for "no deposit required" originally read "total under £300
-threshold", which put £300 in the flyer prose. That value was never
-returned by any tool — it's a rule threshold, not data. I simplified
-the phrasing to "No deposit required for this booking." Without the
-integrity check this would have slipped past review because £300 looks
-like a reasonable number in the right context.
+The dataflow integrity check in `integrity.py` extracts money facts (£N), temperature facts, and weather conditions from the flyer, then calls `fact_appears_in_log` for each against `_TOOL_CALL_LOG`. Every tool call records its arguments and output into the log before returning. A fact that appears in the flyer but not in any tool output fails the check with `unverified_facts`.
 
 ## Citations
 
-- sessions/sess_*/logs/trace.jsonl — tool call sequence
-- sessions/sess_*/workspace/flyer.md — the produced flyer
+- `starter/edinburgh_research/tools.py` — all four tool implementations
+- `starter/edinburgh_research/integrity.py` — `verify_dataflow`, `fact_appears_in_log`

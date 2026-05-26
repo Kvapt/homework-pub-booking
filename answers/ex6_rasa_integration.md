@@ -2,28 +2,13 @@
 
 ## Your answer
 
-The RasaStructuredHalf subclass overrides run() to POST a booking
-intent to Rasa's REST webhook and interpret the response. Input
-payload flows: loop half produces raw booking data → StructuredHalf
-calls normalise_booking_payload (via validator.py) to produce a
-Rasa-shaped message with canonical types → urllib POST to Rasa →
-parse response for {action: committed} or {action: rejected} custom
-slots.
+`RasaStructuredHalf` subclasses `StructuredHalf` and routes booking intent to Rasa via HTTP POST to `/webhooks/rest/webhook`. The input payload is normalised by `normalise_booking_payload` in `validator.py` before sending — this canonicalises currency strings (strips £, converts to int), date formats, party size, and venue_id.
 
-For offline mode we spawn a stdlib http.server thread that mimics a
-Rasa webhook. It always confirms, which is enough for unit tests.
-Rejection is exercised in Ex7 where the loop half's arguments drive
-the decision.
+The `sender_id` sent to Rasa is a hash of `(venue_id + date + time)` making it stable across retries within one session. Rasa's response is parsed for committed or rejected custom slots and returned as a `HalfResult`.
 
-Three design choices worth noting: (1) we raise ValidationFailed in
-normalise_booking_payload and catch it in run() rather than letting
-it propagate; the StructuredHalf contract demands a HalfResult. (2)
-Network errors return success=False with SA_EXT_SERVICE_UNAVAILABLE
-— the caller decides whether to retry. (3) The stable sender_id is a
-hash of (venue+date+time) so the Rasa tracker is consistent across
-retries within one session.
+For offline mode a stdlib `ThreadingHTTPServer` mock is spawned that always confirms, allowing the HTTP contract to be tested without a real Rasa container. Network errors return `success=False` with `SA_EXT_SERVICE_UNAVAILABLE` rather than raising, so the bridge can decide whether to retry.
 
 ## Citations
 
-- starter/rasa_half/validator.py — normalise_booking_payload + helpers
-- starter/rasa_half/structured_half.py — RasaStructuredHalf.run + mock server
+- `starter/rasa_half/structured_half.py` — `RasaStructuredHalf.run`, mock server
+- `starter/rasa_half/validator.py` — `normalise_booking_payload`
