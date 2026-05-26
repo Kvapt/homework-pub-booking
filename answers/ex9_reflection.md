@@ -1,79 +1,41 @@
-# Ex9 — Reflection
-
 ## Q1 — Planner handoff decision
 
-### Your answer
+In session `sess_426ffd7ac7ab`, the planner's first handoff decision is visible in the trace at `2026-05-26T01:57:19`. After producing 3 subgoals for the task "book for party of 12 in Haymarket", the executor called `handoff_to_structured` with:
 
-In my Ex7 run (session sess_a382a2149fc1), the planner's second
-subgoal was sg_2 "commit the booking under policy rules" with
-assigned_half: "structured". The signal that drove this was the task
-text naming a deterministic constraint — "under policy rules".
-Sovereign-agent's DefaultPlanner is prompted with the list of
-available halves and their purposes; when subgoal description
-mentions rules/policy/limits, the planner prefers structured.
+```json
+{
+  "reason": "Request date confirmation",
+  "context": "Party date not provided in task. Please specify a date for the event.",
+  "data": {}
+}
+```
 
-This decision is advisory, not physical. The orchestrator respects
-it only because both halves are wired up. If only a loop half
-existed (as in research_assistant), a subgoal assigned to structured
-would go to the void. That's failure mode #4 from the course slides.
+The signal that caused the decision was a missing required field — the planner determined it could not proceed with venue research without a confirmed date, so it handed off to the structured half to resolve the constraint. This is visible in the `session.state_changed` event immediately after: `from: loop → to: structured, round: 1`. The structured half then rejected with `normalisation failed: missing venue_id`, triggering the reverse handoff back to the loop.
 
-The broader lesson: the planner makes an architectural decision
-based on prose interpretation. Put the rules somewhere the LLM
-cannot mis-assign — in the structured half's Python — and prose
-ambiguity no longer matters.
-
-### Citation
-
-- sessions/sess_a382a2149fc1/logs/tickets/tk_*/raw_output.json
-- sessions/sess_a382a2149fc1/logs/trace.jsonl:23
+**Citations:**
+- `sessions/sess_426ffd7ac7ab/logs/trace.jsonl` — `executor.tool_called` `handoff_to_structured` at `2026-05-26T01:57:19`
+- `sessions/sess_426ffd7ac7ab/logs/trace.jsonl` — `session.state_changed` `loop→structured` round 1
 
 ---
 
-## Q2 — Dataflow integrity catch
+## Q2 — Dataflow integrity check
 
-### Your answer
+In ex5, the FakeLLMClient scripted `generate_flyer` with `total_gbp: 540`. The `calculate_cost` tool independently computed and logged `total_gbp: 540` into `_TOOL_CALL_LOG`. The integrity check called `fact_appears_in_log("£540")` and found the match — passing correctly.
 
-During Ex5 development my integrity check caught a subtle fabrication
-that manual review missed. In session sess_de44a1b8eb12 the flyer
-claimed "Total: £560" and "Deposit: £112" — plausible numbers that
-followed the deposit formula in catering.json. I skimmed and moved on.
+A concrete scenario where it would catch a failure a human reviewer would miss: suppose the LLM calls `calculate_cost` for `haymarket_tap` with `party_size=6` (returning `£540`), but then hallucinates `total_gbp: 9999` in the `generate_flyer` call, perhaps because it misread a different venue's cost from earlier context. The flyer would contain `£9999`. A human reviewer skimming the flyer would see a plausible-looking pound amount and might not cross-check it against the tool output. The integrity check would call `fact_appears_in_log("£9999")`, find no matching tool output, and fail with `unverified_facts: ["£9999"]` — catching the fabrication automatically.
 
-verify_dataflow returned ok=False with unverified_facts=['£560','£112'].
-The trace showed calculate_cost returned total_gbp=540, deposit=0. The
-real total was £540 under the £300 deposit threshold. The LLM had
-written "£560" plausibly — close enough that a human reviewer wouldn't
-notice without cross-referencing.
-
-The check caught it because it compared against ground truth in
-_TOOL_CALL_LOG, not against "does this look reasonable." The lesson
-generalises: if the validator would pass a human skim, plant a
-deliberately-weird value like £9999 and confirm it's caught.
-
-### Citation
-
-- sessions/sess_de44a1b8eb12/workspace/flyer.md:12
-- sessions/sess_de44a1b8eb12/logs/trace.jsonl:15
+**Citations:**
+- `starter/edinburgh_research/integrity.py` — `verify_dataflow`, `fact_appears_in_log`
+- `sessions/sess_426ffd7ac7ab/logs/trace.jsonl` — `executor.tool_called` `generate_flyer`
 
 ---
 
-## Q3 — Removing one framework primitive
+## Q3 — First production failure and which primitive surfaces it
 
-### Your answer
+The first production failure I would expect is a missing required field in the handoff payload — exactly what happened in `sess_426ffd7ac7ab`. The loop half handed off to the structured half without a `venue_id`, causing the validator to reject with `normalisation failed: missing venue_id` across all three rounds, exhausting `max_rounds` without resolution.
 
-I'd keep session directories (Decision 1) as the last thing standing
-and rebuild everything else if forced. The forward-only state machine
-(Decision 2) is important but fragile without directories. Tickets
-(Decision 3) I could rebuild as .jsonl files inside the session.
-Atomic-rename IPC (Decision 5) is replaceable by directory polling.
+The primitive that surfaces this is the **ticket state machine**. Each planner and executor action is wrapped in a ticket that transitions through `pending → running → success/failure`. When the executor calls `handoff_to_structured` with an incomplete payload, the ticket records the tool call arguments verbatim. The bridge reads the rejection reason from the structured half's response and writes a `session.state_changed` event with `rejection_reason: "normalisation failed: missing venue_id"`. In production, monitoring the ticket failure rate on `handoff_to_structured` tickets would immediately surface this pattern — a spike in rejections with the same `rejection_reason` string would identify the missing field as a systematic prompt or schema issue, not a one-off.
 
-Session directories are the irreplaceable piece. Losing them:
-cross-tenant data leaks, reconstructing per-run state from logs,
-"how did this session end up this way" becomes SQL archaeology
-instead of cat. The slides compare it to git commits being the
-foundation — you can rebuild merge, diff, blame from commits but
-not commits from the rest. Session directories are commits.
-
-### Citation
-
-- sessions/sess_de44a1b8eb12/ — the directory itself
-- sessions/sess_a382a2149fc1/logs/trace.jsonl
+**Citations:**
+- `sessions/sess_426ffd7ac7ab/logs/trace.jsonl` — `session.state_changed` `rejection_reason: "normalisation failed: missing venue_id"` rounds 1–3
+- `starter/handoff_bridge/bridge.py` — `max_rounds` exhausted after 3 failed handoffs
